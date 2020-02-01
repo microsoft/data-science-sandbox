@@ -1,53 +1,98 @@
 ---
 page_type: sample
 languages:
-- csharp
+- json
 products:
-- dotnet
-description: "Add 150 character max description"
-urlFragment: "update-this-to-unique-url-stub"
+- azure-resource-manager
+description: "data-science-sandbox defines an Azure-hosted sandbox environment to enable third-parties to collaborate on data science solutions over protected data"
+urlFragment: "azure-data-science-sandbox"
 ---
 
-# Official Microsoft Sample
+# data-science-sandbox
 
-<!-- 
-Guidelines on README format: https://review.docs.microsoft.com/help/onboard/admin/samples/concepts/readme-template?branch=master
+![MIT license badge](https://img.shields.io/badge/license-MIT-green.svg)
 
-Guidance on onboarding samples to docs.microsoft.com/samples: https://review.docs.microsoft.com/help/onboard/admin/samples/process/onboarding?branch=master
-
-Taxonomies for products and languages: https://review.docs.microsoft.com/new-hope/information-architecture/metadata/taxonomies?branch=master
--->
-
-Give a short description for your sample here. What does it do and why is it important?
+`data-science-sandbox` defines an Azure-hosted sandbox environment to enable third-parties to collaborate on data science solutions over protected data sets
 
 ## Contents
 
-Outline the file contents of the repository. It helps users navigate the codebase, build configuration and any related assets.
-
 | File/folder       | Description                                |
 |-------------------|--------------------------------------------|
-| `src`             | Sample source code.                        |
-| `.gitignore`      | Define what to ignore at commit time.      |
-| `CHANGELOG.md`    | List of changes to the sample.             |
-| `CONTRIBUTING.md` | Guidelines for contributing to the sample. |
+| `azuredeploy.json`| Azure Resource Manager template to deploy the sandbox.                        |
 | `README.md`       | This README file.                          |
 | `LICENSE`         | The license for the sample.                |
 
 ## Prerequisites
 
-Outline the required components and tools that a user might need to have on their machine in order to run the sample. This can be anything from frameworks, SDKs, OS versions or IDE releases.
+* Install the [Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli?view=azure-cli-latest)
 
 ## Setup
 
-Explain how to prepare the sample once the user clones or downloads the repository. The section should outline every step necessary to install dependencies and set up any settings (for example, API keys and output folders).
+1. Clone or download this repository
+2. Run the following command to retrieve the `objectId` for your AAD user account
+
+```shell
+az ad user show --id $(az account show --query user.name -o tsv) --query objectId -o tsv
+```
 
 ## Running the sample
 
-Outline step-by-step instructions to execute the sample and see its output. Include steps for executing the sample from the IDE, starting specific services in the Azure portal or anything related to the overall launch of the code.
+```shell
+az group create -n sandbox -l westus2
+az group deployment create -g sandbox --template-file azuredeploy.json --parameters sandboxOwnerObjectId=<objectId>
+```
 
 ## Key concepts
 
-Provide users with more context on the tools and services used in the sample. Explain some of the code that is being used and how services interact with each other.
+![architecture](docs/architecture.png)
+
+The sandbox is modeled as an Azure DevTestLab that sits inside an isolated VNET. After deploying the lab, admins can customize the environment, while sandbox operators can create new VMs to enable experimentation while keeping data secure.
+
+### Roles
+
+It's likely that a few distinct personas may interact with the sandbox
+
+* Administrator:
+  * Deploys the ARM template to create the sandbox
+  * Ensures compliance with organizational IT policy
+  * Works with the Sandbox Operator to enable allowed resources (Azure resources, web services, etc)
+  * Links the sandbox to any outside resources (storage, networking, etc)
+  * Grants access to the Sandbox Operator
+* Sandbox Operator:
+  * Creates sandbox VMs
+  * Grants access to Data Scientists
+  * Provides resources for the sandbox (blobs, secrets, etc)
+* Data Scientist:
+  * Perform data science & machine learning tools inside sandbox VMs
+
+### Architecture
+
+There are a number of notable design decisions in the base template. You may choose to enhance or drop any of these, but they provide a safe default environment to start from
+
+* DevTestLabs
+  * Limited to defined VM images and sizes
+  * Public artifact feeds disabled
+  * Predefined Windows & Linux DSVM formulas for instant provisioning
+  * VMs are created in a defined resource group & VNET
+* Virtual Machines
+  * Based on the Data Science Virtual Machine image (Windows 2019 or Ubuntu)
+  * Must be accessed via Azure Bastion
+  * Auto-shutdown enabled to save on costs
+  * Managed Identity enabled to access Azure resources w/o credentials
+* Storage
+  * Accessible only over explicitly defined networks
+  * Always-encrypted via Microsoft-managed keys
+  * Secure access (HTTPS) enforced
+  * VM Managed Identity is granted read-only access
+* Networking
+  * Inbound & outbound traffic must be explicitly added to the NSG allow list
+  * Services preapproved via NSG Service Tag:
+    * AzureActiveDirectory - for AAD logon (Azure Storage Explorer, Visual Studio, Azure CLI)
+    * AzureResourceManager - to access ARM & enumerate what resources are available (Storage, Key Vault)
+  * Private DNS enables resolution of private endpoints
+* Key Vault
+  * Provides a secure area to store sandbox-level shared secrets
+  * Preloaded with a minimum-scoped read-only SAS URI for applications that don't support Managed Identity
 
 ## Contributing
 
