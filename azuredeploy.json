@@ -81,12 +81,10 @@
     ],
     "devTestLabsUserRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '76283e04-6283-4c54-8f91-bcf1374a3c64')]",
     "readerRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'acdd72a7-3385-48ef-bd42-f606fba81ae7')]",
-    "dnsZoneName": "privatelink.windows.net",
     "bastionName": "[concat(variables('prefix'), '-bastion')]",
     "bastionNsgName": "[concat(variables('prefix'), '-bastion-nsg')]",
     "bastionPublicIPName": "[concat(variables('prefix'), '-bastion-ip')]",
     "deploymentACIName": "deployment-aci",
-    "dnsName": "[variables('prefix')]",
     "identityName": "[concat(variables('prefix'), '-identity')]",
     "labName": "[concat(variables('prefix'), '-lab')]",
     "logsStorageName": "[concat(variables('prefix'), 'logs')]",
@@ -99,6 +97,33 @@
       "signedPermission": "rl",
       "signedProtocol": "https"
     },
+    "privateDnsZones": [
+      "privatelink.blob.core.windows.net",
+      "privatelink.vaultcore.azure.net"
+    ],
+    "privateEndpoints": [
+      {
+        "resourceId": "[resourceId('Microsoft.Storage/storageAccounts', variables('privateStorageName'))]",
+        "name": "[variables('privateStorageEndpointName')]",
+        "groupIds": ["blob"],
+        "dnsZone": "privatelink.blob.core.windows.net",
+        "dnsName": "[variables('privateStorageDnsName')]"
+      },
+      {
+        "resourceId": "[resourceId('Microsoft.Storage/storageAccounts', variables('transferStorageName'))]",
+        "name": "[variables('transferStorageEndpointName')]",
+        "groupIds": ["blob"],
+        "dnsZone": "privatelink.blob.core.windows.net",
+        "dnsName": "[variables('transferStorageDnsName')]"
+      },
+      {
+        "resourceId": "[resourceId('Microsoft.KeyVault/vaults', variables('vaultName'))]",
+        "name": "[variables('vaultEndpointName')]",
+        "groupIds": ["vault"],
+        "dnsZone": "privatelink.vaultcore.azure.net",
+        "dnsName": "[variables('vaultDnsName')]"
+      }
+    ],
     "privateStorageDnsName": "[variables('privateStorageName')]",
     "privateStorageName": "[concat(variables('prefix'), 'private')]",
     "privateStorageEndpointName": "[concat(variables('prefix'), '-blob-private')]",
@@ -149,10 +174,7 @@
         "name": "Standard"
       },
       "properties": {
-        "publicIPAllocationMethod": "Static",
-        "dnsSettings": {
-          "domainNameLabel": "[variables('dnsName')]"
-        }
+        "publicIPAllocationMethod": "Static"
       },
       "resources": [
         {
@@ -400,16 +422,20 @@
       ]
     },
     {
+      "copy": {
+        "name": "privateDnsZones",
+        "count": "[length(variables('privateDnsZones'))]"
+      },
       "type": "Microsoft.Network/privateDnsZones",
       "apiVersion": "2018-09-01",
       "location": "global",
-      "name": "[variables('dnsZoneName')]",
+      "name": "[variables('privateDnsZones')[copyIndex()]]",
       "properties": {
       },
       "resources": [
         {
           "dependsOn": [
-            "[resourceId('Microsoft.Network/privateDnsZones', variables('dnsZoneName'))]"
+            "[resourceId('Microsoft.Network/privateDnsZones', variables('privateDnsZones')[copyIndex()])]"
           ],
           "type": "SOA",
           "apiVersion": "2018-09-01",
@@ -429,7 +455,7 @@
         },
         {
           "dependsOn": [
-            "[resourceId('Microsoft.Network/privateDnsZones', variables('dnsZoneName'))]",
+            "[resourceId('Microsoft.Network/privateDnsZones', variables('privateDnsZones')[copyIndex()])]",
             "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
           ],
           "type": "virtualNetworkLinks",
@@ -933,7 +959,7 @@
           "location": "[resourceGroup().location]",
           "name": "privateStorage",
           "properties": {
-            "value": "[concat(reference(resourceId('Microsoft.Storage/storageAccounts', variables('privateStorageName'))).primaryEndpoints.blob, '?', listServiceSas(resourceId('Microsoft.Storage/storageAccounts', variables('privateStorageName')), '2019-06-01', variables('privateDataContainerSASProperties')).serviceSasToken)]"
+            "value": "[concat(reference(resourceId('Microsoft.Storage/storageAccounts', variables('privateStorageName'))).primaryEndpoints.blob, variables('privateDataContainerName'), '?', listServiceSas(resourceId('Microsoft.Storage/storageAccounts', variables('privateStorageName')), '2019-06-01', variables('privateDataContainerSASProperties')).serviceSasToken)]"
           }
         },
         {
@@ -946,7 +972,7 @@
           "location": "[resourceGroup().location]",
           "name": "transferStorageReader",
           "properties": {
-            "value": "[concat(reference(resourceId('Microsoft.Storage/storageAccounts', variables('transferStorageName'))).primaryEndpoints.blob, '?', listServiceSas(resourceId('Microsoft.Storage/storageAccounts', variables('transferStorageName')), '2019-06-01', variables('transferDataContainerReaderSASProperties')).serviceSasToken)]"
+            "value": "[concat(reference(resourceId('Microsoft.Storage/storageAccounts', variables('transferStorageName'))).primaryEndpoints.blob, variables('transferDataContainerName'), '?', listServiceSas(resourceId('Microsoft.Storage/storageAccounts', variables('transferStorageName')), '2019-06-01', variables('transferDataContainerReaderSASProperties')).serviceSasToken)]"
           }
         },
         {
@@ -959,7 +985,7 @@
           "location": "[resourceGroup().location]",
           "name": "workingStorage",
           "properties": {
-            "value": "[concat(reference(resourceId('Microsoft.Storage/storageAccounts', variables('privateStorageName'))).primaryEndpoints.blob, '?', listServiceSas(resourceId('Microsoft.Storage/storageAccounts', variables('privateStorageName')), '2019-06-01', variables('workingDataContainerSASProperties')).serviceSasToken)]"
+            "value": "[concat(reference(resourceId('Microsoft.Storage/storageAccounts', variables('privateStorageName'))).primaryEndpoints.blob, variables('workingDataContainerName'), '?', listServiceSas(resourceId('Microsoft.Storage/storageAccounts', variables('privateStorageName')), '2019-06-01', variables('workingDataContainerSASProperties')).serviceSasToken)]"
           }
         },
         {
@@ -997,6 +1023,10 @@
       ]
     },
     {
+      "copy": {
+        "name": "transferStorageWriter",
+        "count": "[length(variables('transferDataContainerWriterSASProperties'))]"
+      },
       "dependsOn": [
         "[resourceId('Microsoft.KeyVault/vaults', variables('vaultName'))]",
         "[resourceId('Microsoft.Storage/storageAccounts', variables('transferStorageName'))]"
@@ -1005,84 +1035,30 @@
       "apiVersion": "2016-10-01",
       "location": "[resourceGroup().location]",
       "name": "[concat(variables('vaultName'), '/transferStorageWriter-', variables('transferDataContainerWriterSASProperties')[copyIndex()].name)]",
+      "properties": {
+        "value": "[concat(reference(resourceId('Microsoft.Storage/storageAccounts', variables('transferStorageName'))).primaryEndpoints.blob, variables('transferDataContainerName'), '?', listServiceSas(resourceId('Microsoft.Storage/storageAccounts', variables('transferStorageName')), '2019-06-01', variables('transferDataContainerWriterSASProperties')[copyIndex()]).serviceSasToken)]"
+      }
+    },
+    {
       "copy": {
-        "name": "transferStorageWriter",
-        "count": "[length(variables('transferDataContainerWriterSASProperties'))]"
+        "name": "privateEndpoints",
+        "count": "[length(variables('privateEndpoints'))]"
       },
-      "properties": {
-        "value": "[concat(reference(resourceId('Microsoft.Storage/storageAccounts', variables('transferStorageName'))).primaryEndpoints.blob, '?', listServiceSas(resourceId('Microsoft.Storage/storageAccounts', variables('transferStorageName')), '2019-06-01', variables('transferDataContainerWriterSASProperties')[copyIndex()]).serviceSasToken)]"
-      }
-    },
-    {
       "dependsOn": [
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('privateStorageName'))]",
+        "[variables('privateEndpoints')[copyIndex()].resourceId]",
         "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
       ],
       "type": "Microsoft.Network/privateEndpoints",
       "apiVersion": "2019-09-01",
       "location": "[resourceGroup().location]",
-      "name": "[variables('privateStorageEndpointName')]",
+      "name": "[variables('privateEndpoints')[copyIndex()].name]",
       "properties": {
         "privateLinkServiceConnections": [
           {
-            "name": "[variables('privateStorageEndpointName')]",
+            "name": "[variables('privateEndpoints')[copyIndex()].name]",
             "properties": {
-              "groupIds": [
-                "blob"
-              ],
-              "privateLinkServiceId": "[resourceId('Microsoft.Storage/storageAccounts', variables('privateStorageName'))]"
-            }
-          }
-        ],
-        "subnet": {
-          "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), variables('vmSubnetName'))]"
-        }
-      }
-    },
-    {
-      "dependsOn": [
-        "[resourceId('Microsoft.KeyVault/vaults', variables('vaultName'))]",
-        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
-      ],
-      "type": "Microsoft.Network/privateEndpoints",
-      "apiVersion": "2019-09-01",
-      "location": "[resourceGroup().location]",
-      "name": "[variables('vaultEndpointName')]",
-      "properties": {
-        "privateLinkServiceConnections": [
-          {
-            "name": "[variables('vaultEndpointName')]",
-            "properties": {
-              "groupIds": [
-                "vault"
-              ],
-              "privateLinkServiceId": "[resourceId('Microsoft.KeyVault/vaults', variables('vaultName'))]"
-            }
-          }
-        ],
-        "subnet": {
-          "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), variables('vmSubnetName'))]"
-        }
-      }
-    },
-    {
-      "dependsOn": [
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('transferStorageName'))]",
-        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
-      ],
-      "type": "Microsoft.Network/privateEndpoints",
-      "apiVersion": "2019-09-01",
-      "location": "[resourceGroup().location]",
-      "name": "[variables('transferStorageEndpointName')]",
-      "properties": {
-        "privateLinkServiceConnections": [
-          {
-            "name": "[variables('transferStorageEndpointName')]",
-            "properties": {
-              "groupIds": [
-                "blob"
-              ],
-              "privateLinkServiceId": "[resourceId('Microsoft.Storage/storageAccounts', variables('transferStorageName'))]"
+              "groupIds": "[variables('privateEndpoints')[copyIndex()].groupIds]",
+              "privateLinkServiceId": "[variables('privateEndpoints')[copyIndex()].resourceId]"
             }
           }
         ],
@@ -1461,13 +1437,17 @@
       }
     },
     {
+      "copy": {
+        "name": "privateDnsRecords",
+        "count": "[length(variables('privateEndpoints'))]"
+      },
       "dependsOn": [
-        "[resourceId('Microsoft.Network/privateDnsZones', variables('dnsZoneName'))]",
-        "[resourceId('Microsoft.Network/privateEndpoints', variables('privateStorageEndpointName'))]"
+        "[resourceId('Microsoft.Network/privateDnsZones', variables('privateEndpoints')[copyIndex()].dnsZone)]",
+        "[resourceId('Microsoft.Network/privateEndpoints', variables('privateEndpoints')[copyIndex()].name)]"
       ],
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2017-05-10",
-      "name": "private-blob-private-dns",
+      "name": "[concat('private-dns-', variables('privateEndpoints')[copyIndex()].name)]",
       "resourceGroup": "[resourceGroup().name]",
       "properties": {
         "mode": "Incremental",
@@ -1475,27 +1455,27 @@
           "scope": "inner"
         },
         "parameters": {
-          "dnsZoneName": {
-            "value": "[variables('dnsZoneName')]"
+          "privateDnsZoneName": {
+            "value": "[variables('privateEndpoints')[copyIndex()].dnsZone]"
           },
           "endpointNicId": {
-            "value": "[reference(resourceId('Microsoft.Network/privateEndpoints', variables('privateStorageEndpointName'))).networkInterfaces[0].id]"
+            "value": "[reference(resourceId('Microsoft.Network/privateEndpoints', variables('privateEndpoints')[copyIndex()].name)).networkInterfaces[0].id]"
           },
-          "dnsName": {
-            "value": "[variables('privateStorageDnsName')]"
+          "endpointDnsName": {
+            "value": "[variables('privateEndpoints')[copyIndex()].dnsName]"
           }
         },
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
           "parameters": {
-            "dnsZoneName": {
+            "privateDnsZoneName": {
               "type": "string"
             },
             "endpointNicId": {
               "type": "string"
             },
-            "dnsName": {
+            "endpointDnsName": {
               "type": "string"
             }
           },
@@ -1503,121 +1483,7 @@
             {
               "type": "Microsoft.Network/privateDnsZones/A",
               "apiVersion": "2018-09-01",
-              "name": "[concat(parameters('dnsZoneName'), '/', parameters('dnsName'))]",
-              "properties": {
-                "ttl": 3600,
-                "aRecords": [
-                  {
-                    "ipv4Address": "[reference(parameters('endpointNicId'), '2019-09-01').ipConfigurations[0].properties.privateIPAddress]"
-                  }
-                ]
-              }
-            }
-          ]
-        }
-      }
-    },
-    {
-      "dependsOn": [
-        "[resourceId('Microsoft.Network/privateDnsZones', variables('dnsZoneName'))]",
-        "[resourceId('Microsoft.Network/privateEndpoints', variables('transferStorageEndpointName'))]"
-      ],
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2017-05-10",
-      "name": "transfer-blob-private-dns",
-      "resourceGroup": "[resourceGroup().name]",
-      "properties": {
-        "mode": "Incremental",
-        "expressionEvaluationOptions": {
-          "scope": "inner"
-        },
-        "parameters": {
-          "dnsZoneName": {
-            "value": "[variables('dnsZoneName')]"
-          },
-          "endpointNicId": {
-            "value": "[reference(resourceId('Microsoft.Network/privateEndpoints', variables('transferStorageEndpointName'))).networkInterfaces[0].id]"
-          },
-          "dnsName": {
-            "value": "[variables('transferStorageDnsName')]"
-          }
-        },
-        "template": {
-          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-          "contentVersion": "1.0.0.0",
-          "parameters": {
-            "dnsZoneName": {
-              "type": "string"
-            },
-            "endpointNicId": {
-              "type": "string"
-            },
-            "dnsName": {
-              "type": "string"
-            }
-          },
-          "resources": [
-            {
-              "type": "Microsoft.Network/privateDnsZones/A",
-              "apiVersion": "2018-09-01",
-              "name": "[concat(parameters('dnsZoneName'), '/', parameters('dnsName'))]",
-              "properties": {
-                "ttl": 3600,
-                "aRecords": [
-                  {
-                    "ipv4Address": "[reference(parameters('endpointNicId'), '2019-09-01').ipConfigurations[0].properties.privateIPAddress]"
-                  }
-                ]
-              }
-            }
-          ]
-        }
-      }
-    },
-    {
-      "dependsOn": [
-        "[resourceId('Microsoft.Network/privateDnsZones', variables('dnsZoneName'))]",
-        "[resourceId('Microsoft.Network/privateEndpoints', variables('vaultEndpointName'))]"
-      ],
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2017-05-10",
-      "name": "vault-private-dns",
-      "resourceGroup": "[resourceGroup().name]",
-      "properties": {
-        "mode": "Incremental",
-        "expressionEvaluationOptions": {
-          "scope": "inner"
-        },
-        "parameters": {
-          "dnsZoneName": {
-            "value": "[variables('dnsZoneName')]"
-          },
-          "endpointNicId": {
-            "value": "[reference(resourceId('Microsoft.Network/privateEndpoints', variables('vaultEndpointName'))).networkInterfaces[0].id]"
-          },
-          "dnsName": {
-            "value": "[variables('vaultDnsName')]"
-          }
-        },
-        "template": {
-          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-          "contentVersion": "1.0.0.0",
-          "parameters": {
-            "dnsZoneName": {
-              "type": "string"
-            },
-            "endpointNicId": {
-              "type": "string"
-            },
-            "dnsName": {
-              "type": "string"
-            }
-          },
-          "resources": [
-            {
-              "type": "Microsoft.Network/privateDnsZones/A",
-              "apiVersion": "2018-09-01",
-              "name": "[concat(parameters('dnsZoneName'), '/', parameters('dnsName'))]",
+              "name": "[concat(parameters('privateDnsZoneName'), '/', parameters('endpointDnsName'))]",
               "properties": {
                 "ttl": 3600,
                 "aRecords": [
